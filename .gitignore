@@ -27,3 +27,5 @@ Thumbs.db
 # Logs
 *.log
 "@ | Set-Content .gitignore
+# Uploaded resumes
+backend/storage/

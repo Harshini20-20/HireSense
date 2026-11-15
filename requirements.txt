@@ -1,0 +1,30 @@
+
+# ==================================
+# HIRE SENSE - BACKEND DEPENDENCIES
+# ==================================
+
+# Backend framework
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-multipart
+
+# Database
+sqlalchemy
+
+# Document processing
+pymupdf
+python-docx
+
+# AI / NLP
+sentence-transformers
+spacy
+scikit-learn
+
+# Data processing
+pandas
+numpy
+
+# Testing
+pytest
+httpx

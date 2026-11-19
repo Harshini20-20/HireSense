@@ -29,3 +29,4 @@ Thumbs.db
 "@ | Set-Content .gitignore
 # Uploaded resumes
 backend/storage/
+backend/venv312/

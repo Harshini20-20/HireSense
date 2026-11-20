@@ -87,3 +87,36 @@ def test_complete_candidate_extraction():
     assert result["experience_years"] == 2.0
     assert "Python" in result["skills"]
     assert len(result["education"]) >= 1
+def test_experience_prefers_professional_over_projects():
+    text = """
+    WORK EXPERIENCE
+    1 year of professional experience.
+
+    PROJECTS
+    3 years of academic project experience.
+    """
+    assert extract_experience(text) == 1.0
+
+
+def test_experience_excludes_coursework():
+    text = """
+    EDUCATION
+    4 years of coursework in computer science.
+    """
+    assert extract_experience(text) is None
+
+
+def test_experience_supports_months():
+    text = """
+    WORK EXPERIENCE
+    6 months of professional experience.
+    """
+    assert extract_experience(text) == 0.5
+
+
+def test_experience_returns_none_without_work_history():
+    text = """
+    PROJECTS
+    Developed applications over 2 years.
+    """
+    assert extract_experience(text) is None

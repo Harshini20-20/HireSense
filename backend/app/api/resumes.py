@@ -44,15 +44,13 @@ async def upload_resumes(
                 "error": str(exc),
             })
 
-        except ResumeUploadError as exc:
-            import traceback
-            print("RESUME UPLOAD ERROR:", repr(exc))
-            traceback.print_exc()
+        except Exception:
             db.rollback()
+
             results.append({
                 "status": "failed",
                 "file_name": file_name,
-                "error": str(exc),
+                "error": "An unexpected error occurred while processing this resume.",
             })
 
     successful = sum(

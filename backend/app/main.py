@@ -5,6 +5,7 @@ from fastapi.openapi.utils import get_openapi
 from backend.app.api.jobs import router as jobs_router
 from backend.app.api.resumes import router as resumes_router
 
+from backend.app.api.matching import router as matching_router
 
 app = FastAPI(
     title="HireSense API",
@@ -15,7 +16,7 @@ app = FastAPI(
 # Register API routers
 app.include_router(jobs_router)
 app.include_router(resumes_router)
-
+app.include_router(matching_router)
 
 @app.get("/")
 def root():

@@ -1,8 +1,9 @@
+
 from backend.app.services.jd_analyzer import (
     extract_skills,
     extract_experience,
     extract_education,
-    analyze_job_description
+    analyze_job_description,
 )
 
 
@@ -43,3 +44,28 @@ def test_analyze_job_description():
     assert "FastAPI" in result["skills"]
     assert result["minimum_experience"] == 2
     assert result["education"] == "Bachelor's"
+
+
+# Experience extraction regression tests
+
+
+def test_extract_experience_range_uses_minimum():
+    assert extract_experience("1-3 years of experience") == 1
+
+
+def test_extract_experience_with_plus():
+    assert extract_experience("2+ years of relevant experience") == 2
+
+
+def test_extract_preferred_experience():
+    text = "Minimum 1 year of experience. 3 years preferred."
+
+    assert extract_experience(text) == 1
+
+
+def test_extract_fresher_requirement():
+    assert extract_experience("Freshers welcome") == 0
+
+
+def test_extract_no_experience_required():
+    assert extract_experience("No prior experience required") == 0

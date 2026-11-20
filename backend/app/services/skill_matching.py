@@ -22,19 +22,19 @@ def match_skills(
     required_skills: list[str],
     preferred_skills: list[str],
     candidate_skills: list[str],
+    unspecified_skills: list[str] | None = None,
 ) -> dict:
     """
     Compare candidate skills against job requirements.
 
-    Required skills contribute 80% of the score.
+    Required skills contribute 80%.
     Preferred skills contribute 20%.
-
-    If one category is absent, the other receives the
-    full weight. If no job skills are supplied, the score
-    is None rather than an artificial zero.
+    Unspecified skills are reported but do not affect scoring.
     """
+
     required = unique_skills(required_skills)
     preferred = unique_skills(preferred_skills)
+    unspecified = unique_skills(unspecified_skills or [])
     candidate = unique_skills(candidate_skills)
 
     candidate_set = set(candidate)
@@ -44,6 +44,9 @@ def match_skills(
 
     matched_preferred = preferred.keys() & candidate_set
     missing_preferred = preferred.keys() - candidate_set
+
+    matched_unspecified = unspecified.keys() & candidate_set
+    missing_unspecified = unspecified.keys() - candidate_set
 
     matched_required_names = [
         required[key] for key in required if key in matched_required
@@ -59,7 +62,16 @@ def match_skills(
         preferred[key] for key in preferred if key in missing_preferred
     ]
 
-    all_job_skills = set(required) | set(preferred)
+    matched_unspecified_names = [
+        unspecified[key] for key in unspecified if key in matched_unspecified
+    ]
+    missing_unspecified_names = [
+        unspecified[key] for key in unspecified if key in missing_unspecified
+    ]
+
+    all_job_skills = (
+        set(required) | set(preferred) | set(unspecified)
+    )
 
     additional_skills = [
         candidate[key]
@@ -98,5 +110,7 @@ def match_skills(
         "missing_required_skills": missing_required_names,
         "matched_preferred_skills": matched_preferred_names,
         "missing_preferred_skills": missing_preferred_names,
+        "matched_unspecified_skills": matched_unspecified_names,
+        "missing_unspecified_skills": missing_unspecified_names,
         "additional_skills": additional_skills,
     }

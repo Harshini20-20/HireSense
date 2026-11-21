@@ -30,6 +30,20 @@ PROJECT_SECTION_HEADERS = {
     "project experience",
     "academic and personal projects",
 }
+EXCLUDED_EXPERIENCE_SECTION_HEADERS = {
+    "education",
+    "academic qualifications",
+    "coursework",
+    "relevant coursework",
+    "training",
+    "academic training",
+    "projects",
+    "academic projects",
+    "personal projects",
+    "key projects",
+    "project experience",
+    "academic and personal projects",
+}
 
 NON_PROJECT_SECTION_HEADERS = {
     "education",
@@ -144,26 +158,74 @@ def extract_experience(text: str) -> float | None:
     """
     Extract explicitly stated professional experience.
 
-    Excludes project, academic and coursework durations.
+    Supports professional experience sections and explicit
+    experience statements in resume summaries.
+    Excludes project, academic and unrelated durations.
     Supports years and months.
     """
 
     if not isinstance(text, str) or not text.strip():
         return None
 
-    excluded_sections = PROJECT_SECTION_HEADERS | {
-        "education",
-        "academic qualifications",
+    experience_sections = {
+        "experience",
+        "work experience",
+        "professional experience",
+        "employment history",
+        "work history",
+        "professional background",
     }
 
-    experience_values = []
-    current_section = None
+    summary_sections = {
+        "summary",
+        "professional summary",
+        "profile",
+        "career summary",
+        "objective",
+        "career objective",
+    }
+
+    excluded_sections = {
+        "education",
+        "academic qualifications",
+        "coursework",
+        "relevant coursework",
+        "training",
+        "academic training",
+        "projects",
+        "academic projects",
+        "personal projects",
+        "key projects",
+        "project experience",
+        "academic and personal projects",
+        "skills",
+        "technical skills",
+        "certifications",
+        "certificates",
+        "achievements",
+        "awards",
+        "publications",
+        "interests",
+        "languages",
+        "references",
+        "contact",
+        "contact information",
+    }
 
     duration_pattern = re.compile(
         r"\b(\d+(?:\.\d+)?)\s*"
         r"(years?|yrs?|months?|mos?)\b",
         re.IGNORECASE,
     )
+
+    summary_experience_pattern = re.compile(
+        r"\b(?:experienced|experience|professional|work|"
+        r"working|employment|career)\b",
+        re.IGNORECASE,
+    )
+
+    experience_values = []
+    current_section = None
 
     exclusion_terms = (
         "project",
@@ -184,11 +246,19 @@ def extract_experience(text: str) -> float | None:
             current_section = "excluded"
             continue
 
-        if heading in NON_PROJECT_SECTION_HEADERS:
-            current_section = heading
+        if heading in experience_sections:
+            current_section = "experience"
             continue
 
-        if current_section == "excluded":
+        if heading in summary_sections:
+            current_section = "summary"
+            continue
+
+        if heading in NON_PROJECT_SECTION_HEADERS:
+            current_section = "excluded"
+            continue
+
+        if current_section not in {"experience", "summary"}:
             continue
 
         normalized_line = cleaned_line.lower()
@@ -196,9 +266,13 @@ def extract_experience(text: str) -> float | None:
         if any(term in normalized_line for term in exclusion_terms):
             continue
 
-        matches = duration_pattern.finditer(cleaned_line)
+        if (
+            current_section == "summary"
+            and not summary_experience_pattern.search(normalized_line)
+        ):
+            continue
 
-        for match in matches:
+        for match in duration_pattern.finditer(cleaned_line):
             value = float(match.group(1))
             unit = match.group(2).lower()
 

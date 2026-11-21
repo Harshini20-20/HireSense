@@ -1,11 +1,11 @@
-@"
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.pyd
 .pytest_cache/
 .venv/
 venv/
+backend/venv312/
 
 # Environment variables
 .env
@@ -15,6 +15,18 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+
+# Uploaded resumes
+backend/storage/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Environment and build output
+dist/
+build/
 
 # IDE
 .vscode/
@@ -26,7 +38,3 @@ Thumbs.db
 
 # Logs
 *.log
-"@ | Set-Content .gitignore
-# Uploaded resumes
-backend/storage/
-backend/venv312/

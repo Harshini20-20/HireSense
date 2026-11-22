@@ -1,5 +1,8 @@
 
+import logging
 import os
+import sqlite3
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -21,7 +24,12 @@ from backend.app.services.resume_parser import (
 from backend.app.services.candidate_extractor import (
     extract_candidate_information,
 )
+from backend.app.services.resume_storage import (
+    ResumeStorageError,
+    configured_storage_reference,
+)
 
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 STORAGE_DIR = Path(os.getenv(
@@ -38,13 +46,45 @@ class ResumeUploadError(Exception):
     """Raised when resume upload processing fails."""
 
 
+def _safe_sqlite_diagnostic(exc: Exception) -> tuple[int | str, str, str] | None:
+    """Return safe SQLite metadata without exposing its raw error text."""
+    original = getattr(exc, "orig", None)
+    if not isinstance(original, sqlite3.Error):
+        return None
+
+    code = getattr(original, "sqlite_errorcode", "unavailable")
+    name = getattr(original, "sqlite_errorname", "unavailable")
+    if not isinstance(name, str) or not name.startswith("SQLITE_") or not all(
+        character.isupper() or character.isdigit() or character == "_"
+        for character in name
+    ):
+        name = "unavailable"
+
+    message = str(original).casefold()
+    primary_code = code & 0xFF if isinstance(code, int) else None
+    if (
+        primary_code in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+        or "locked" in message
+        or "database is busy" in message
+    ):
+        category = "database locked/busy"
+    elif primary_code == sqlite3.SQLITE_READONLY or "readonly" in message or "read-only" in message:
+        category = "database readonly"
+    elif "no such table" in message:
+        category = "missing table"
+    elif "no such column" in message or "no column named" in message:
+        category = "missing column"
+    else:
+        category = "other SQLite operational error"
+
+    return code, name, category
+
+
 async def process_resume_upload(
     upload_file: UploadFile,
     db: Session,
     job_id: int | None = None,
 ) -> dict:
-
-    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
     if job_id is not None and db.get(Job, job_id) is None:
         raise ResumeUploadError("Selected job was not found.")
@@ -74,18 +114,26 @@ async def process_resume_upload(
     if extension == ".docx" and not content.startswith(b"PK"):
         raise ResumeUploadError("Invalid DOCX file.")
 
-    stored_name = f"{uuid.uuid4().hex}{extension}"
-    file_path = STORAGE_DIR / stored_name
-
+    temporary_path = None
+    storage = None
+    storage_key = None
+    storage_reference = None
+    upload_attempted = False
+    stage = "temporary file preparation"
     try:
-        file_path.write_bytes(content)
+        with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as temporary_file:
+            temporary_file.write(content)
+            temporary_path = Path(temporary_file.name)
 
-        extracted_text = extract_resume_text(file_path)
+        stage = f"{extension[1:].upper()} parsing"
+        extracted_text = extract_resume_text(temporary_path)
 
+        stage = "candidate data extraction"
         candidate_data = extract_candidate_information(
             extracted_text
         )
 
+        stage = "candidate profile lookup and persistence"
         email = candidate_data["email"]
 
         candidate = None
@@ -116,10 +164,29 @@ async def process_resume_upload(
             if not candidate.phone:
                 candidate.phone = candidate_data["phone"]
 
+        stage = "resume storage configuration and key check"
+        stored_name = f"{uuid.uuid4().hex}{extension}"
+        storage, storage_key, storage_reference = configured_storage_reference(stored_name)
+        stage = f"{storage.name} storage object existence check"
+        if storage.exists(storage_key):
+            raise ResumeUploadError("Could not allocate a unique resume storage key.")
+
+        content_type = (
+            "application/pdf" if extension == ".pdf"
+            else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        upload_attempted = True
+        stage = (
+            "Supabase Storage upload" if storage.name == "supabase"
+            else "local filesystem upload"
+        )
+        storage.upload(storage_key, content, content_type)
+
+        stage = "resume, job association, and skills database persistence"
         resume = Resume(
             candidate_id=candidate.id,
             file_name=original_name,
-            file_path=str(file_path.resolve()),
+            file_path=storage_reference,
             extracted_text=extracted_text,
         )
 
@@ -176,11 +243,45 @@ async def process_resume_upload(
             "education": candidate_data["education"],
             "experience_years": candidate_data["experience_years"],
             "message": "Resume uploaded and processed successfully.",
+            "_storage_backend": storage,
+            "_storage_key": storage_key,
         }
 
     except Exception as exc:
-        file_path.unlink(missing_ok=True)
+        if not isinstance(exc, ResumeUploadError):
+            # Preserve the original traceback frames and exception type while
+            # suppressing exception text, which can contain SQL parameters or
+            # parser input derived from candidate data.
+            sqlite_diagnostic = _safe_sqlite_diagnostic(exc)
+            if sqlite_diagnostic is None:
+                sqlite_code, sqlite_name, sqlite_category = "n/a", "n/a", "n/a"
+            else:
+                sqlite_code, sqlite_name, sqlite_category = sqlite_diagnostic
+
+            safe_exception = RuntimeError("Original exception details redacted.")
+            logger.exception(
+                "Resume processing failed at stage=%s format=%s backend=%s "
+                "error_type=%s sqlite_error_code=%s sqlite_error_name=%s "
+                "sqlite_error_category=%s",
+                stage,
+                extension[1:].upper(),
+                storage.name if storage is not None else "not selected",
+                type(exc).__name__,
+                sqlite_code,
+                sqlite_name,
+                sqlite_category,
+                exc_info=(RuntimeError, safe_exception, exc.__traceback__),
+            )
+
         db.rollback()
+
+        if upload_attempted and storage is not None and storage_key is not None:
+            try:
+                storage.delete(storage_key)
+            except ResumeStorageError:
+                # A request can fail after the provider accepted the upload.
+                # Keep this generic so storage credentials and paths stay private.
+                logger.error("Unable to remove resume object after upload processing failed.")
 
         if isinstance(exc, ResumeUploadError):
             raise
@@ -188,9 +289,17 @@ async def process_resume_upload(
         if isinstance(exc, ResumeParsingError):
             raise ResumeUploadError(str(exc)) from exc
 
+        if isinstance(exc, ResumeStorageError):
+            raise ResumeUploadError(str(exc)) from exc
+
         raise ResumeUploadError(
-            f"Resume processing failed: {exc}"
+            "Resume processing failed."
         ) from exc
 
     finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Unable to remove a temporary resume parsing file.")
         await upload_file.close()

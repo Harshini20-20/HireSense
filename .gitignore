@@ -10,6 +10,7 @@ backend/venv312/
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Databases
 *.db

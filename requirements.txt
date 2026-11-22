@@ -11,6 +11,7 @@ python-multipart
 
 # Database
 sqlalchemy
+psycopg[binary]
 
 # Document processing
 pymupdf

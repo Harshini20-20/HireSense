@@ -5,8 +5,12 @@ services:
       dockerfile: backend/Dockerfile
     restart: unless-stopped
     environment:
-      HIRESENSE_DATABASE_URL: sqlite:////app/backend/hiresense.db
+      DATABASE_URL: ${DATABASE_URL:-}
       HIRESENSE_RESUME_STORAGE: /app/backend/storage/resumes
+      RESUME_STORAGE_BACKEND: ${RESUME_STORAGE_BACKEND:-local}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-hiresense-resumes}
       HIRESENSE_CORS_ORIGINS: ${HIRESENSE_CORS_ORIGINS:-http://localhost:8080}
     volumes:
       - type: bind

@@ -1,14 +1,14 @@
 import logging
-import shutil
-import tempfile
-from pathlib import Path
 from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.models.resume import Resume
-from backend.app.services.resume_upload import STORAGE_DIR
+from backend.app.services.resume_storage import (
+    ResumeStorageError,
+    storage_for_reference,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -18,45 +18,28 @@ class DeletionError(Exception):
     """Raised when a deletion cannot safely complete."""
 
 
-def _managed_resume_path(stored_path: str) -> Path:
-    storage_root = STORAGE_DIR.resolve()
-    raw_path = str(stored_path)
-    candidate = Path(raw_path)
-
-    # Windows absolute paths can remain in the database when the same data
-    # directory is later mounted into the Linux Docker container.
-    if candidate.is_absolute() and candidate.resolve(strict=False).is_relative_to(storage_root):
-        resolved = candidate.resolve(strict=False)
-    else:
-        normalized_parts = [part for part in raw_path.replace("\\", "/").split("/") if part]
-        lower_parts = [part.casefold() for part in normalized_parts]
-        if len(normalized_parts) < 3 or lower_parts[-3:-1] != ["storage", "resumes"]:
-            raise DeletionError(
-                "The resume file path is outside managed resume storage; deletion was cancelled."
-            )
-        resolved = (storage_root / normalized_parts[-1]).resolve(strict=False)
-
-    if not resolved.is_relative_to(storage_root):
+def _storage_identity(reference: str):
+    try:
+        return storage_for_reference(reference)
+    except ResumeStorageError as exc:
         raise DeletionError(
-            "The resume file path is outside managed resume storage; deletion was cancelled."
-        )
-    if resolved.exists() and not resolved.is_file():
-        raise DeletionError("The resume path does not point to a regular file.")
-    return resolved
+            "A resume storage reference is invalid; deletion was cancelled."
+        ) from exc
 
 
-def _remaining_resume_paths(db: Session, deleting_resume_ids: set[int]) -> set[Path]:
-    remaining_paths = set()
+def _remaining_resume_references(db: Session, deleting_resume_ids: set[int]) -> set[str]:
+    remaining_references = set()
     rows = db.execute(select(Resume.id, Resume.file_path)).all()
     for resume_id, file_path in rows:
         if resume_id in deleting_resume_ids:
             continue
         try:
-            remaining_paths.add(_managed_resume_path(file_path))
+            _, _, canonical = _storage_identity(file_path)
+            remaining_references.add(canonical)
         except DeletionError:
             # An unrelated legacy path must not prevent deletion of this profile.
             continue
-    return remaining_paths
+    return remaining_references
 
 
 def delete_database_rows_and_files(
@@ -64,58 +47,56 @@ def delete_database_rows_and_files(
     resume_rows: list[Resume],
     delete_rows: Callable[[], None],
 ) -> None:
-    """Delete database rows and now-unreferenced files with rollback recovery."""
+    """Delete database rows and unreferenced storage objects with compensation."""
     deleting_ids = {resume.id for resume in resume_rows}
-    remaining_paths = _remaining_resume_paths(db, deleting_ids)
-    file_paths = {
-        _managed_resume_path(resume.file_path)
-        for resume in resume_rows
-    } - remaining_paths
-    existing_paths = [path for path in file_paths if path.exists()]
+    remaining_references = _remaining_resume_references(db, deleting_ids)
+    objects_to_delete = {}
+    for resume in resume_rows:
+        storage, key, canonical = _storage_identity(resume.file_path)
+        if canonical not in remaining_references:
+            objects_to_delete[canonical] = (storage, key)
 
-    backup_dir = None
-    removed_paths: list[Path] = []
+    backups = {}
+    attempted_deletes = []
     try:
-        if existing_paths:
-            backup_dir = Path(tempfile.mkdtemp(prefix="hiresense-delete-"))
-            for index, path in enumerate(existing_paths):
-                shutil.copy2(path, backup_dir / str(index))
+        for canonical, (storage, key) in objects_to_delete.items():
+            if storage.exists(key):
+                backups[canonical] = (storage, key, storage.retrieve(key))
 
         delete_rows()
         db.flush()
 
-        for path in existing_paths:
-            path.unlink()
-            removed_paths.append(path)
+        for canonical, (storage, key, _) in backups.items():
+            # Include the current item before calling delete because a remote
+            # timeout may occur after the provider has accepted the request.
+            attempted_deletes.append(canonical)
+            storage.delete(key)
 
         db.commit()
     except Exception as exc:
         db.rollback()
         restoration_errors = []
-        if backup_dir is not None:
-            for index, path in enumerate(existing_paths):
-                if path in removed_paths:
-                    try:
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(backup_dir / str(index), path)
-                    except OSError as restore_exc:
-                        restoration_errors.append(str(restore_exc))
-        if backup_dir is not None and not restoration_errors:
-            shutil.rmtree(backup_dir, ignore_errors=True)
+        for canonical in attempted_deletes:
+            storage, key, contents = backups[canonical]
+            extension = ".pdf" if key.lower().endswith(".pdf") else ".docx"
+            content_type = (
+                "application/pdf" if extension == ".pdf"
+                else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            try:
+                storage.upload(key, contents, content_type, upsert=True)
+            except ResumeStorageError:
+                restoration_errors.append(canonical)
         if restoration_errors:
             logger.critical(
-                "Resume deletion rollback could not restore files: %s",
-                "; ".join(restoration_errors),
+                "Resume deletion rollback could not restore %s storage object(s).",
+                len(restoration_errors),
             )
             raise DeletionError(
-                "Deletion failed and file restoration needs administrator attention."
+                "Deletion failed and storage restoration needs administrator attention."
             ) from exc
         if isinstance(exc, DeletionError):
             raise
+        if isinstance(exc, ResumeStorageError):
+            raise DeletionError("Resume storage could not complete the deletion.") from exc
         raise DeletionError("Deletion failed; database changes were rolled back.") from exc
-    else:
-        if backup_dir is not None:
-            try:
-                shutil.rmtree(backup_dir)
-            except OSError:
-                logger.exception("Could not remove temporary resume deletion backup %s", backup_dir)

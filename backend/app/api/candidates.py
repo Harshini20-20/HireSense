@@ -1,9 +1,10 @@
 from datetime import datetime
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -18,28 +19,14 @@ from backend.app.services.deletion import (
     DeletionError,
     delete_database_rows_and_files,
 )
-from backend.app.services.resume_upload import STORAGE_DIR
+from backend.app.services.resume_storage import (
+    ResumeObjectNotFound,
+    ResumeStorageError,
+    storage_for_reference,
+)
 
 
 router = APIRouter(prefix="/api/candidates", tags=["Candidates"])
-
-
-def _resolve_resume_file(stored_path: str) -> Path:
-    storage_root = STORAGE_DIR.resolve()
-    raw_path = str(stored_path)
-    requested_path = Path(raw_path)
-
-    if requested_path.is_absolute() and requested_path.resolve(strict=False).is_relative_to(storage_root):
-        resolved = requested_path.resolve(strict=False)
-    else:
-        path_parts = [part for part in raw_path.replace("\\", "/").split("/") if part]
-        if len(path_parts) < 3 or [part.casefold() for part in path_parts[-3:-1]] != ["storage", "resumes"]:
-            raise HTTPException(status_code=404, detail="Resume file is unavailable.")
-        resolved = (storage_root / path_parts[-1]).resolve(strict=False)
-
-    if not resolved.is_relative_to(storage_root) or not resolved.is_file():
-        raise HTTPException(status_code=404, detail="Resume file is unavailable.")
-    return resolved
 
 
 def _safe_download_filename(file_name: str, resume_id: int, extension: str) -> str:
@@ -99,8 +86,12 @@ def view_candidate_resume(
     if resume is None:
         raise HTTPException(status_code=404, detail="Resume not found for this candidate.")
 
-    file_path = _resolve_resume_file(resume.file_path)
-    extension = file_path.suffix.lower()
+    try:
+        storage, storage_key, _ = storage_for_reference(resume.file_path)
+    except ResumeStorageError as exc:
+        raise HTTPException(status_code=404, detail="Resume file is unavailable.") from exc
+
+    extension = Path(storage_key).suffix.lower()
     if extension == ".pdf":
         media_type = "application/pdf"
         disposition = "inline"
@@ -111,12 +102,26 @@ def view_candidate_resume(
         raise HTTPException(status_code=415, detail="This resume file type cannot be served.")
 
     download_name = _safe_download_filename(resume.file_name, resume.id, extension)
-    return FileResponse(
-        path=file_path,
+    try:
+        contents = storage.retrieve(storage_key)
+    except ResumeObjectNotFound as exc:
+        raise HTTPException(status_code=404, detail="Resume file is unavailable.") from exc
+    except ResumeStorageError as exc:
+        raise HTTPException(status_code=503, detail="Resume storage is unavailable.") from exc
+
+    encoded_name = quote(download_name, safe="")
+    content_disposition = (
+        f'{disposition}; filename="resume-{resume.id}{extension}"; '
+        f"filename*=UTF-8''{encoded_name}"
+    )
+    return Response(
+        content=contents,
         media_type=media_type,
-        filename=download_name,
-        content_disposition_type=disposition,
-        headers={"Cache-Control": "private, no-store"},
+        headers={
+            "Content-Disposition": content_disposition,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

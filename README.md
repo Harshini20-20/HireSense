@@ -1,110 +1,144 @@
 # HireSense
+### AI-Based Resume Matching & Candidate Ranking System
 
-HireSense is a React + Vite frontend and FastAPI backend with a SQLite database and local resume storage.
+HireSense is an AI-powered recruitment application that helps recruiters evaluate resumes against job descriptions, identify relevant candidates, and understand candidate-job compatibility through structured and semantic matching.
 
-## Run with Docker Compose
+**[Live Demo](https://hiresense.pages.dev)** · **[GitHub Repository](https://github.com/Harshini20-20/HireSense)**
 
-Docker Desktop with Docker Compose is required. From the project root in PowerShell, create a local environment file:
+## Features
 
-```powershell
-Copy-Item .env.example .env
+- **Job Management:** Create and manage job descriptions and requirements.
+- **Resume Processing:** Upload and process PDF and DOCX resumes.
+- **Candidate Extraction:** Extract relevant candidate information, skills, and experience.
+- **Semantic Matching:** Compare resumes and job descriptions using sentence embeddings.
+- **Skill Gap Analysis:** Identify matched and missing skills.
+- **Candidate Ranking:** Generate matching scores and rank candidates.
+- **Candidate Insights:** View individual candidate analysis and matching details.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Frontend | React.js, Vite |
+| Backend | Python, FastAPI |
+| NLP | Sentence Transformers |
+| Embedding Model | MiniLM |
+| Database | PostgreSQL, SQLite |
+| File Storage | Supabase Storage |
+| Deployment | Cloudflare Pages, Render |
+
+## Architecture
+
+```mermaid
+flowchart TD
+    A[Recruiter] --> B[React Frontend]
+    B --> C[FastAPI Backend]
+    C --> D[Resume Parsing]
+    C --> E[Job Requirement Extraction]
+    D --> F[Hybrid Matching Engine]
+    E --> F
+    F --> G[Candidate Ranking]
+    G --> H[Analysis Dashboard]
+    C --> I[PostgreSQL]
+    C --> J[Supabase Storage]
 ```
 
-The defaults use the existing `backend/hiresense.db` and `backend/storage/resumes` paths. Confirm both are present before starting. The Compose bind mounts deliberately fail if either host path is missing, instead of silently creating a new database path. Adjust the paths in `.env` only when pointing at an existing data location. `.env` is ignored by Git.
+## Matching Methodology
 
-Build the images and start the application:
+HireSense uses a hybrid evaluation approach combining:
 
-```powershell
-docker compose build
-docker compose up -d
-docker compose ps
+1. **Semantic Similarity:** Sentence embeddings capture contextual relationships between job descriptions and resume content.
+2. **Skill Matching:** Compares extracted candidate skills against job requirements.
+3. **Experience Evaluation:** Considers relevant candidate experience.
+4. **Education Evaluation:** Uses extracted qualification information.
+
+The system generates an overall matching score between 0 and 100 and presents supporting candidate insights.
+
+The score is a comparative indicator, not a probability of hiring success. Final candidate selection remains a human decision.
+
+## Deployment
+
+| Component | Service |
+|---|---|
+| Frontend | [Cloudflare Pages](https://hiresense.pages.dev) |
+| Backend | [Render](https://hiresense-backend-dq78.onrender.com) |
+| Database | Supabase PostgreSQL |
+| Resume Storage | Supabase Storage |
+
+## Local Setup
+
+### Prerequisites
+
+- Python
+- Node.js and npm
+- Git
+- Docker (optional)
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Harshini20-20/HireSense.git
+cd HireSense
 ```
 
-Open [http://localhost:8080](http://localhost:8080). Change `FRONTEND_PORT` in `.env` if port 8080 is already in use.
+### 2. Configure environment variables
 
-The frontend is a Vite production build served by Nginx. Nginx serves the React single-page application and proxies `/api` requests to the backend over the private Compose network. The backend port is not published to the host. Set `VITE_API_BASE_URL` in `.env` before building to change the frontend API base URL.
+Refer to `.env.example` and configure the required environment variables.
 
-### Persistent data
+Do not commit `.env` files or expose credentials.
 
-- `HIRESENSE_DB_FILE` bind-mounts the existing SQLite file to `/app/backend/hiresense.db`.
-- `HIRESENSE_RESUME_DIR` bind-mounts the existing resume directory to `/app/backend/storage/resumes`.
-- A named `model_cache` volume stores downloaded sentence-transformer model files.
+### 3. Start the backend
 
-Containers do not initialize the database or run migrations on startup. Do not remove or relocate the host database or resume directory while the application is running.
+Follow the backend dependency and startup configuration in the project.
 
-### Database configuration
+### 4. Start the frontend
 
-The backend reads `DATABASE_URL` from the process environment. In Docker Compose, Compose passes the value from the project `.env` file or deployment environment. Leave it blank or unset to use the existing SQLite file at `backend/hiresense.db`. The SQLite bind mount remains in place for local Docker use.
-
-For PostgreSQL, set `DATABASE_URL` to the connection URL supplied by your hosting provider in an untracked `.env` file or deployment secret. PostgreSQL URLs are routed through psycopg 3; `sslmode=require` is added when the URL does not specify an `sslmode`. An explicit `sslmode` and other driver query options are preserved. Never put credentials in frontend build variables or source control.
-
-FastAPI startup does not create or migrate tables. This repository has explicit `create_all`/additive migration utilities, but no versioned Alembic migration history. A PostgreSQL deployment must have its schema reviewed and provisioned before application use. Existing SQLite data is not copied to PostgreSQL by this configuration.
-
-To initialize a **fresh** PostgreSQL database, first put its connection URL in the ignored project `.env` file as `DATABASE_URL`. Then build the backend image and run the explicit, PostgreSQL-only initializer from the project root:
-
-```powershell
-docker compose build backend
-docker compose run --rm backend python -m backend.app.database.initialize_postgres
-```
-
-The command refuses to run when `DATABASE_URL` is missing or uses a non-PostgreSQL dialect. It creates missing tables from the registered SQLAlchemy models, inserts no records, and is safe to repeat. It does not alter existing tables or migrate SQLite data. The application does not invoke this command during startup.
-
-The current metadata defines eight tables: `jobs`, `job_requirements`, `candidates`, `candidate_skills`, `resumes`, `analyses`, `analysis_details`, and `job_candidates`. Primary keys are integer IDs. `analysis_details` uses SQLAlchemy `JSON` columns (PostgreSQL `JSON`, not `JSONB`); other columns use portable `String`, `Text`, `DateTime`, `Float`, and integer types. Explicit unique constraints cover `(candidate_id, normalized_skill)`, `(job_id, candidate_id)` in analyses, `analysis_id`, and `(job_id, candidate_id)` in job associations. `job_candidates.job_id` and `candidate_id` have explicit indexes. Foreign keys connect requirements to jobs; skills and resumes to candidates; analyses to jobs, candidates, and resumes; analysis details to analyses; and job associations to jobs and candidates. Cascade actions are declared on requirements, skills, resumes, analysis details, and job associations. Timestamp columns use `now()` server defaults. `importance`, association `source`/`status`, and analysis-detail JSON defaults are SQLAlchemy client-side defaults.
-
-### Resume storage configuration
-
-`RESUME_STORAGE_BACKEND` defaults to `local`, preserving the existing `HIRESENSE_RESUME_STORAGE` path and Docker bind mount. Set it to `supabase` for a private Supabase Storage bucket, then provide `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and optionally `SUPABASE_STORAGE_BUCKET` (defaults to `hiresense-resumes`) through the backend environment. Keep the secret key in the untracked `.env` or deployment secret store, and never use a `VITE_` variable for it. Docker Compose passes these values only to the backend; the bucket remains private.
-
-New resume rows store a stable backend-prefixed object key in the existing `resumes.file_path` column, so no schema change or migration is needed. Existing absolute local paths remain supported. Selecting Supabase does not copy existing local resume files to the bucket; keep the local storage mount available for records that still point to local files, or plan a separate controlled migration before removing it. Uploads remain limited to PDF/DOCX and 10 MB. PDFs are served inline through the existing API route, and DOCX files are returned as downloads.
-
-### Stop, restart, and logs
-
-Stop the containers without removing data:
-
-```powershell
-docker compose stop
-```
-
-Start the stopped containers again:
-
-```powershell
-docker compose start
-```
-
-Restart services:
-
-```powershell
-docker compose restart
-```
-
-View logs, or follow them live:
-
-```powershell
-docker compose logs
-docker compose logs -f backend frontend
-```
-
-After changing application or Docker configuration, rebuild and recreate the services while keeping their mounts and volumes:
-
-```powershell
-docker compose up -d --build
-```
-
-Avoid commands that remove Compose volumes when preserving the model cache matters. The SQLite database and resumes are host bind mounts and remain in their configured host locations.
-
-## Local development
-
-The existing non-container workflow remains available. From the project root, activate your Python environment and run:
-
-```powershell
-python -m uvicorn backend.app.main:app --reload --port 8001
-```
-
-In another terminal:
-
-```powershell
-Set-Location .\frontend
+```bash
+cd frontend
+npm install
 npm run dev
 ```
 
-Vite continues to proxy `/api` requests to `http://127.0.0.1:8001` during local development.
+### Docker
+
+The project also includes Docker configuration for running the application using Docker Compose.
+
+```bash
+docker compose up --build
+```
+
+Refer to the Docker Compose configuration for the available services and ports.
+
+## Database and Storage
+
+HireSense uses PostgreSQL for persistent application data and Supabase Storage for uploaded resume documents.
+
+The database manages jobs, candidates, skills, resumes, analyses, and job-candidate associations.
+
+Resume documents are stored in a private storage bucket.
+
+## Security and Privacy
+
+- Backend credentials are maintained through environment variables.
+- Resume documents use private cloud storage.
+- Synthetic or publicly licensed resumes should be used for demonstrations.
+- Authentication and access-control improvements are future enhancements.
+
+## Future Improvements
+
+- Recruiter authentication and role-based access.
+- Improved resume parsing accuracy.
+- Expanded matching evaluation and scoring validation.
+- Batch-processing improvements.
+- Advanced recruitment analytics.
+- Enhanced error handling and monitoring.
+
+## Author
+
+**Harshini**
+
+[GitHub Profile](https://github.com/Harshini20-20)
+
+---
+
+*HireSense is an independently developed project exploring the application of NLP and semantic similarity to recruitment workflows.*

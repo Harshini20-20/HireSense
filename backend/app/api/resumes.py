@@ -1,7 +1,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from backend.app.database.connection import get_db
@@ -19,6 +19,7 @@ router = APIRouter(
 @router.post("/upload")
 async def upload_resumes(
     files: Annotated[list[UploadFile], File(description="Upload PDF or DOCX resumes")],
+    job_id: int | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     results = []
@@ -27,7 +28,7 @@ async def upload_resumes(
         file_name = upload_file.filename or "unknown"
 
         try:
-            result = await process_resume_upload(upload_file, db)
+            result = await process_resume_upload(upload_file, db, job_id=job_id)
             db.commit()
 
             results.append({
@@ -58,6 +59,7 @@ async def upload_resumes(
     )
 
     return {
+        "job_id": job_id,
         "total_files": len(files),
         "successful": successful,
         "failed": len(results) - successful,

@@ -1,0 +1,56 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      HIRESENSE_DATABASE_URL: sqlite:////app/backend/hiresense.db
+      HIRESENSE_RESUME_STORAGE: /app/backend/storage/resumes
+      HIRESENSE_CORS_ORIGINS: ${HIRESENSE_CORS_ORIGINS:-http://localhost:8080}
+    volumes:
+      - type: bind
+        source: ${HIRESENSE_DB_FILE:-./backend/hiresense.db}
+        target: /app/backend/hiresense.db
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HIRESENSE_RESUME_DIR:-./backend/storage/resumes}
+        target: /app/backend/storage/resumes
+        bind:
+          create_host_path: false
+      - model_cache:/home/hiresense/.cache/huggingface
+    expose:
+      - "8001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  model_cache:

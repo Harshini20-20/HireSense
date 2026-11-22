@@ -1,4 +1,5 @@
 
+import os
 import uuid
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 from backend.app.models.candidate import Candidate
 from backend.app.models.resume import Resume
 from backend.app.models.candidate_skill import CandidateSkill
+from backend.app.models.job_candidate import JobCandidate
+from backend.app.models.job import Job
 
 from backend.app.services.resume_parser import (
     extract_resume_text,
@@ -21,7 +24,10 @@ from backend.app.services.candidate_extractor import (
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-STORAGE_DIR = BASE_DIR / "storage" / "resumes"
+STORAGE_DIR = Path(os.getenv(
+    "HIRESENSE_RESUME_STORAGE",
+    str(BASE_DIR / "storage" / "resumes"),
+))
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -35,9 +41,13 @@ class ResumeUploadError(Exception):
 async def process_resume_upload(
     upload_file: UploadFile,
     db: Session,
+    job_id: int | None = None,
 ) -> dict:
 
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    if job_id is not None and db.get(Job, job_id) is None:
+        raise ResumeUploadError("Selected job was not found.")
 
     original_name = Path(upload_file.filename or "").name
     extension = Path(original_name).suffix.lower()
@@ -114,6 +124,26 @@ async def process_resume_upload(
         )
 
         db.add(resume)
+        db.flush()
+
+        # Explicitly uploaded resumes are associated with the selected job.
+        if job_id is not None:
+            link = db.scalar(
+                select(JobCandidate).where(
+                    JobCandidate.job_id == job_id,
+                    JobCandidate.candidate_id == candidate.id,
+                )
+            )
+            if link is None:
+                db.add(JobCandidate(
+                    job_id=job_id,
+                    candidate_id=candidate.id,
+                    source="APPLIED",
+                    status="APPLIED",
+                ))
+            else:
+                link.source = "APPLIED"
+                link.status = "APPLIED"
 
         existing_skills = {
             skill.normalized_skill

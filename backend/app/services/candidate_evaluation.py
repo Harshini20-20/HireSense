@@ -9,6 +9,7 @@ from backend.app.models.analysis_detail import AnalysisDetail
 from backend.app.models.candidate import Candidate
 from backend.app.models.job import Job
 from backend.app.models.resume import Resume
+from backend.app.models.job_candidate import JobCandidate
 
 from backend.app.services.candidate_extractor import (
     extract_candidate_information,
@@ -64,7 +65,13 @@ def evaluate_job_candidates(db: Session, job_id: int) -> dict:
     for resume in resumes:
         latest_resumes.setdefault(resume.candidate_id, resume)
 
-    evaluated_candidates = []
+    applied_links = db.scalars(
+        select(JobCandidate).where(JobCandidate.job_id == job.id)
+    ).all()
+    applied_ids = {link.candidate_id for link in applied_links}
+
+    applied_candidates = []
+    recommended_candidates = []
 
     for candidate_id, resume in latest_resumes.items():
 
@@ -249,9 +256,23 @@ def evaluate_job_candidates(db: Session, job_id: int) -> dict:
             ]
             detail.explanation = json.dumps(explanation)
 
-        evaluated_candidates.append(candidate_result)
+        candidate_result["source"] = (
+            "APPLIED" if candidate.id in applied_ids else "AI_RECOMMENDED"
+        )
+        if candidate.id in applied_ids:
+            applied_candidates.append(candidate_result)
+        elif scoring_results["overall_score"] is not None and scoring_results["overall_score"] >= 60:
+            score = scoring_results["overall_score"]
+            candidate_result["match_level"] = (
+                "Strong Match" if score >= 80
+                else "Good Match" if score >= 70
+                else "Potential Match"
+            )
+            recommended_candidates.append(candidate_result)
 
-    ranked_candidates = rank_candidates(evaluated_candidates)
+    ranked_applied = rank_candidates(applied_candidates)
+    ranked_recommended = rank_candidates(recommended_candidates)
+    ranked_candidates = rank_candidates(ranked_applied + ranked_recommended)
 
     db.commit()
 
@@ -259,6 +280,10 @@ def evaluate_job_candidates(db: Session, job_id: int) -> dict:
         "job_id": job.id,
         "job_title": job.title,
         "total_candidates": len(ranked_candidates),
+        "applied_count": len(ranked_applied),
+        "recommended_count": len(ranked_recommended),
         "job_requirements": job_analysis,
+        "applied_candidates": ranked_applied,
+        "recommended_candidates": ranked_recommended,
         "candidates": ranked_candidates,
     }

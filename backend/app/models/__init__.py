@@ -14,4 +14,6 @@ __all__ = [
     "Analysis",
     "AnalysisDetail",
     "CandidateSkill",
+    "JobCandidate",
 ]
+from backend.app.models.job_candidate import JobCandidate

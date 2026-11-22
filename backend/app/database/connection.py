@@ -1,5 +1,6 @@
 
 from pathlib import Path
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -7,7 +8,10 @@ from sqlalchemy.orm import sessionmaker
 # Store the database inside the backend directory
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-DATABASE_URL = f"sqlite:///{(BASE_DIR / 'hiresense.db').as_posix()}"
+DATABASE_URL = os.getenv(
+    "HIRESENSE_DATABASE_URL",
+    f"sqlite:///{(BASE_DIR / 'hiresense.db').as_posix()}",
+)
 
 # Create database engine
 engine = create_engine(

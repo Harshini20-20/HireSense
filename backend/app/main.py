@@ -1,9 +1,12 @@
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from backend.app.api.jobs import router as jobs_router
+from backend.app.api.candidates import router as candidates_router
 from backend.app.api.resumes import router as resumes_router
 
 from backend.app.api.matching import router as matching_router
@@ -16,7 +19,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv(
+            "HIRESENSE_CORS_ORIGINS", "http://localhost:5173"
+        ).split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,6 +33,7 @@ app.add_middleware(
 
 # Register API routers
 app.include_router(jobs_router)
+app.include_router(candidates_router)
 app.include_router(resumes_router)
 app.include_router(matching_router)
 

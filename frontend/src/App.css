@@ -4,15 +4,21 @@
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
+  overflow: hidden;
   background: #f7f8fc;
   color: #20243a;
 }
 
 .sidebar {
   width: 255px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 5;
   background: #171a2d;
   color: #fff;
   display: flex;
@@ -130,6 +136,11 @@
 .main-content {
   flex: 1;
   min-width: 0;
+  height: 100vh;
+  height: 100dvh;
+  margin-left: 255px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .topbar {
@@ -536,6 +547,11 @@
 .candidate-list {
   display: grid;
   gap: 13px;
+  max-height: min(58vh, 600px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 6px 1px 1px;
+  scrollbar-gutter: stable;
 }
 
 .candidate-card {
@@ -627,6 +643,10 @@
     width: 210px;
   }
 
+  .main-content {
+    margin-left: 210px;
+  }
+
   .page-content {
     padding: 30px 25px;
   }
@@ -643,12 +663,24 @@
 @media (max-width: 700px) {
   .app-shell {
     flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .sidebar {
     width: 100%;
     min-height: auto;
+    height: auto;
+    position: static;
     padding: 15px;
+  }
+
+  .main-content {
+    height: auto;
+    min-height: 0;
+    margin-left: 0;
+    overflow-y: auto;
   }
 
   .brand {
@@ -701,6 +733,10 @@
     grid-template-columns: 35px minmax(0, 1fr);
   }
 
+  .candidate-list {
+    max-height: 55vh;
+  }
+
   .candidate-score {
     grid-column: 2;
     text-align: left;
@@ -714,4 +750,212 @@
   .form-card {
     padding: 20px;
   }
+}
+
+
+/* Candidate evaluation enhancements */
+.evaluation-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.stat-card {
+  background: #fff;
+  border: 1px solid #eceef4;
+  border-radius: 12px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 7px;
+}
+.stat-card span, .stat-card small { color: #9296a8; font-size: 11px; }
+.stat-card strong { color: #252943; font-size: 25px; letter-spacing: -0.7px; }
+.candidate-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 190px 190px;
+  gap: 10px;
+  margin: 20px 0 16px;
+}
+.candidate-toolbar input, .candidate-toolbar select {
+  min-width: 0;
+  border: 1px solid #e4e6ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #292c40;
+  padding: 12px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.candidate-toolbar input:focus, .candidate-toolbar select:focus {
+  border-color: #9487f3;
+  box-shadow: 0 0 0 3px #7966f512;
+}
+.candidate-card.expanded { border-color: #c9c2fa; }
+.candidate-expand-button {
+  grid-column: 2 / -1;
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: #7161e6;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.candidate-expanded-details {
+  grid-column: 2 / -1;
+  width: 100%;
+  border-top: 1px solid #eff0f5;
+  margin-top: 5px;
+  padding-top: 17px;
+}
+.candidate-expanded-details h4 { margin: 12px 0 10px; font-size: 12px; color: #343750; }
+.candidate-expanded-details p { color: #85899d; font-size: 11px; line-height: 1.7; margin: 7px 0; }
+.score-row { max-width: 560px; margin: 10px 0; }
+.score-row-label { display: flex; justify-content: space-between; margin-bottom: 6px; color: #777c91; font-size: 11px; }
+.score-row-label strong { color: #4f4b81; }
+.score-track { height: 7px; overflow: hidden; background: #f0eff8; border-radius: 20px; }
+.score-fill { height: 100%; background: linear-gradient(90deg, #7665ef, #a18bff); border-radius: inherit; }
+.results-count { color: #9296a8; font-size: 11px; text-align: right; margin-top: 14px; }
+@media (max-width: 900px) {
+  .evaluation-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .candidate-toolbar { grid-template-columns: 1fr 1fr; }
+  .candidate-toolbar input { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .evaluation-stats { grid-template-columns: 1fr 1fr; }
+  .candidate-toolbar { grid-template-columns: 1fr; }
+  .candidate-toolbar input { grid-column: auto; }
+  .candidate-expand-button, .candidate-expanded-details { grid-column: 1 / -1; }
+}
+
+
+.candidate-group { margin-top: 28px; }
+.candidate-group-heading {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 0 0 14px; gap: 12px;
+}
+.candidate-group-heading h3 { margin: 0; font-size: 18px; }
+.candidate-group-heading span { color: #737b91; font-size: 13px; }
+.candidate-score .match-level {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #f0edff;
+  color: #5b4acb;
+  font-size: 10px;
+  font-weight: 700;
+}
+.secondary-button {
+  border: 1px solid #d8d5fa; background: #f5f3ff; color: #5b4acb;
+  border-radius: 9px; padding: 9px 13px; font-weight: 600; cursor: pointer;
+}
+.secondary-button:disabled { opacity: .55; cursor: not-allowed; }
+
+.management-section {
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid #eceef4;
+  border-radius: 14px;
+  background: #fff;
+}
+.management-heading,
+.managed-job,
+.managed-candidate-heading,
+.managed-resume {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.management-heading { margin-bottom: 16px; }
+.management-heading h2 { margin: 0 0 5px; font-size: 18px; }
+.management-heading .form-description { margin: 0; }
+.management-heading > span { flex-shrink: 0; color: #737b91; font-size: 12px; }
+.managed-job-list,
+.managed-candidate-list,
+.managed-resume-list { display: grid; gap: 10px; }
+.managed-candidate-list {
+  max-height: min(68vh, 680px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 6px 1px 1px;
+  scrollbar-gutter: stable;
+}
+.candidate-profile-toolbar { margin: 0 0 14px; }
+.candidate-profile-toolbar input {
+  width: 100%;
+  border: 1px solid #e4e6ee;
+  border-radius: 8px;
+  background: #fff;
+  color: #292c40;
+  padding: 12px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.candidate-profile-toolbar input:focus {
+  border-color: #9487f3;
+  box-shadow: 0 0 0 3px #7966f512;
+}
+.managed-job,
+.managed-candidate { padding: 15px; border: 1px solid #eceef4; border-radius: 11px; }
+.managed-job > div,
+.managed-resume > div { display: grid; gap: 5px; min-width: 0; }
+.managed-job strong,
+.managed-resume strong { overflow-wrap: anywhere; color: #292c40; font-size: 13px; }
+.managed-job span,
+.managed-candidate-heading p,
+.managed-resume small,
+.no-resumes { color: #85899d; font-size: 11px; }
+.managed-candidate-heading { align-items: flex-start; }
+.managed-candidate-heading h3 { margin: 0 0 5px; font-size: 15px; }
+.managed-candidate-heading p { margin: 0; overflow-wrap: anywhere; }
+.managed-resume-list { margin-top: 14px; padding-top: 12px; border-top: 1px solid #eff0f5; }
+.managed-resume { padding: 9px 0; }
+.managed-resume > div { grid-template-columns: 1fr auto; align-items: center; }
+.managed-resume small { grid-column: 1 / -1; }
+.latest-resume-label { padding: 3px 7px; border-radius: 999px; background: #f0edff; color: #5b4acb; font-size: 9px; font-weight: 700; }
+.resume-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.resume-view-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8d5fa;
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: #f5f3ff;
+  color: #5b4acb;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.resume-view-button:hover { background: #ebe8ff; }
+.danger-button {
+  flex-shrink: 0;
+  border: 1px solid #f2caca;
+  border-radius: 8px;
+  padding: 8px 11px;
+  background: #fff7f7;
+  color: #b83d4a;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.danger-button:hover { background: #ffeded; border-color: #e9b4ba; }
+
+@media (max-width: 700px) {
+  .management-section { padding: 16px; }
+  .managed-candidate-list { max-height: 62vh; }
+  .managed-job,
+  .managed-resume { align-items: flex-start; }
+  .managed-resume { flex-wrap: wrap; }
+  .resume-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
+  .managed-resume > div { grid-template-columns: minmax(0, 1fr); }
+  .managed-resume small { grid-column: auto; }
+  .managed-candidate-heading { flex-direction: column; }
 }

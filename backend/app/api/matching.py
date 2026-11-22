@@ -45,3 +45,46 @@ def evaluate_candidates(
             status_code=500,
             detail="Candidate evaluation failed.",
         ) from exc
+
+
+@router.post("/{job_id}/candidates/{candidate_id}/add")
+def add_recommended_candidate(
+    job_id: int,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+):
+    """Move an AI-discovered candidate into the selected job's recruiter workflow."""
+    from sqlalchemy import select
+    from backend.app.models.job import Job
+    from backend.app.models.candidate import Candidate
+    from backend.app.models.job_candidate import JobCandidate
+
+    if db.get(Job, job_id) is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if db.get(Candidate, candidate_id) is None:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+
+    link = db.scalar(select(JobCandidate).where(
+        JobCandidate.job_id == job_id,
+        JobCandidate.candidate_id == candidate_id,
+    ))
+    if link is None:
+        link = JobCandidate(
+            job_id=job_id,
+            candidate_id=candidate_id,
+            source="RECRUITER_ADDED",
+            status="NEW",
+        )
+        db.add(link)
+    else:
+        link.source = "RECRUITER_ADDED"
+        link.status = "NEW"
+
+    db.commit()
+    return {
+        "message": "Candidate added to this job's workflow.",
+        "job_id": job_id,
+        "candidate_id": candidate_id,
+        "source": link.source,
+        "status": link.status,
+    }
